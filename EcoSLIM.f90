@@ -412,7 +412,7 @@ nnz=nz+1
 
 itemp=0
 
-nCLMsoil = 10 ! number of CLM soil layers over the root zone
+nCLMsoil = 4 ! number of CLM soil layers over the root zone
 nzclm = 13+nCLMsoil ! CLM output is 13+nCLMsoil layers for different variables not domain NZ,
            !  e.g. 23 for 10 soil layers (default) and 17 for 4 soil layers (Noah soil
            ! layer setup)
