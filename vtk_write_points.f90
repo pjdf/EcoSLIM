@@ -33,13 +33,15 @@ CHARACTER*12 num1, num2, num3
 CHARACTER*8 ctime
 real*8 number,X,Clocx, Clocy, Dxl, Dxu, Dyl, Dyu
 
+INTEGER t3,t4
+
 debug = 0
 !
 !      Open File
 !
 Write(ctime,'(i8.8)') icycle
 OPEN(15,FILE=trim(vtk_file)//'.'//ctime//'.vtk',FORM='unformatted',  &
-    access='stream',convert='BIG_ENDIAN')
+    access='stream')
 !
 !      Write header info
 !
@@ -52,6 +54,7 @@ Write(15) "DATASET POLYDATA"//lf
 write(num1, '(i12)') np_active
 Write(15) "POINTS "//num1//" FLOAT"//lf
 !write(15) ((real(P(j,i),kind=4), i=1,3), j=1,np_active)  ! This forces the expected write order
+call system_clock(T3)
 do j =1, np_active
   write(15) real(P(j,1:2),kind=4)
   ! find integer cell location
@@ -76,19 +79,34 @@ do j =1, np_active
   ! write new location
   write(15) real(P(j,3)+X -maxZ,kind=4)
 end do !!j
+call system_clock(T4)
+write(*,'("Point location write (s):",e12.5)') float(T4-T3)/1000.
+
           write(15) lf
 write(15) "POINT_DATA "//num1//lf
 write(15) "SCALARS Time float"//lf
 Write(15) "LOOKUP_TABLE default"//lf
-write(15) (real(P(j,4),kind=4), j=1,np_active)
+call system_clock(T3)
+! write(15) (real(P(j,4),kind=4), j=1,np_active)
+write(15)  real(P(1:np_active,4),kind=4)
+call system_clock(T4)
+write(*,'("Residence time write (s):",e12.5)') float(T4-T3)/1000.
 write(15) lf
 write(15) "SCALARS Mass float"//lf
 Write(15) "LOOKUP_TABLE default"//lf
-write(15) (real(P(j,6),kind=4), j=1,np_active)
+call system_clock(T3)
+! write(15) (real(P(j,6),kind=4), j=1,np_active)
+write(15) real(P(1:np_active,6),kind=4)
+call system_clock(T4)
+write(*,'("Mass write (s):",e12.5)') float(T4-T3)/1000.
 write(15) lf
 write(15) "SCALARS Source float"//lf
 Write(15) "LOOKUP_TABLE default"//lf
-write(15) (real(P(j,7),kind=4), j=1,np_active)
+call system_clock(T3)
+! write(15) (real(P(j,7),kind=4), j=1,np_active)
+write(15) real(P(1:np_active,7),kind=4)
+call system_clock(T4)
+write(*,'("Source write (s):",e12.5)') float(T4-T3)/1000.
 write(15) lf
 !write(15) "SCALARS Delta float"//lf
 !Write(15) "LOOKUP_TABLE default"//lf
