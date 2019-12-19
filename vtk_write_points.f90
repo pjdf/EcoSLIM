@@ -34,29 +34,17 @@ CHARACTER*8 ctime
 real*8 number,X,Clocx, Clocy, Dxl, Dxu, Dyl, Dyu
 
 INTEGER t3,t4
+REAL*8 Zadj(np_active),XYZ(3,np_active)
 
 debug = 0
-!
-!      Open File
-!
-Write(ctime,'(i8.8)') icycle
-OPEN(15,FILE=trim(vtk_file)//'.'//ctime//'.vtk',FORM='unformatted',  &
-    access='stream',convert='BIG_ENDIAN')
-!
-!      Write header info
-!
-lf = char(10) ! line feed character
-Write(15) "# vtk DataFile Version 2.0"//lf
-Write(15) "EcoSLIM Points Output"//lf
-Write(15) "BINARY"//lf
-Write(15) "DATASET POLYDATA"//lf
 
-write(num1, '(i12)') np_active
-Write(15) "POINTS "//num1//" FLOAT"//lf
-!write(15) ((real(P(j,i),kind=4), i=1,3), j=1,np_active)  ! This forces the expected write order
-call system_clock(T3)
+Write(ctime,'(i8.8)') icycle
+
+!
+!     Pre-calculate Z values, and combine for a single array to write
+!
+
 do j =1, np_active
-  write(15) real(P(j,1:2),kind=4)
   ! find integer cell location
   Px = floor(P(j,1) / dx)
   Py = floor(P(j,2) / dy)
@@ -76,9 +64,33 @@ do j =1, np_active
         + Dxu*Clocx)  +    &
        ((1.0d0-Clocy)*Dyl &
                 + Dyu*Clocy) ) / 2.0D0
-  ! write new location
-  write(15) real(P(j,3)+X -maxZ,kind=4)
+  Zadj(j) = P(j,3) + X - maxZ
 end do !!j
+
+!!! Outstanding question around whether we can do this cheaper . . .
+XYZ(1:2,:) = transpose(P(1:np_active,1:2))
+XYZ(3,:) = Zadj
+
+!
+!      Open File
+!
+call system_clock(T3)
+OPEN(15,FILE=trim(vtk_file)//'.'//ctime//'.vtk',FORM='unformatted',  &
+    access='stream',convert='BIG_ENDIAN')
+!
+!      Write header info
+!
+lf = char(10) ! line feed character
+Write(15) "# vtk DataFile Version 2.0"//lf
+Write(15) "EcoSLIM Points Output"//lf
+Write(15) "BINARY"//lf
+Write(15) "DATASET POLYDATA"//lf
+
+write(num1, '(i12)') np_active
+Write(15) "POINTS "//num1//" FLOAT"//lf
+!write(15) ((real(P(j,i),kind=4), i=1,3), j=1,np_active)  ! This forces the expected write order
+
+write(15) real(XYZ,kind=4)
 call system_clock(T4)
 write(*,'("Point location write (s):",e12.5)') float(T4-T3)/1000.
 
