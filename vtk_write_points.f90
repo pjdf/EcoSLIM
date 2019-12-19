@@ -43,29 +43,37 @@ Write(ctime,'(i8.8)') icycle
 !
 !     Pre-calculate Z values, and combine for a single array to write
 !
+! Set up parallelization of this for speed
+!$OMP PARALLEL PRIVATE(j,Px,Py,Clocx,Clocy,Dxl,Dxu,Dyl,Dyu,X) &
+!$OMP& SHARED(dx,dy,P,np_active,DEM,nx,ny,Zadj,maxZ) &
+!$OMP& Default(none)
+!$OMP DO
+  do j =1, np_active
+    ! find integer cell location
+    Px = floor(P(j,1) / dx)
+    Py = floor(P(j,2) / dy)
+    ! Find each particle's factional cell location
+    Clocx = (P(j,1) - float(Px)*dx)  / dx
+    Clocy = (P(j,2) - float(Py)*dy)  / dy
+    ! X is local adjustment for DEM
+    ! linearly interpolate particle location in DEM cell
+    Dxl = DEM(Px+1,Py+1)
+    Dxu = DEM(Px+2,Py+1)
+    Dyl = DEM(Px+1,Py+1)
+    Dyu = DEM(Px+1,Py+2)
+    ! correct for edges
+    if (Px == nx -1) Dxu = Dxl
+    if (Py == ny -1) Dyu = Dyl
+    X = ( ((1.0d0-Clocx)*Dxl &
+          + Dxu*Clocx)  +    &
+         ((1.0d0-Clocy)*Dyl &
+                  + Dyu*Clocy) ) / 2.0D0
+    Zadj(j) = P(j,3) + X - maxZ
+  end do !!j
 
-do j =1, np_active
-  ! find integer cell location
-  Px = floor(P(j,1) / dx)
-  Py = floor(P(j,2) / dy)
-  ! Find each particle's factional cell location
-  Clocx = (P(j,1) - float(Px)*dx)  / dx
-  Clocy = (P(j,2) - float(Py)*dy)  / dy
-  ! X is local adjustment for DEM
-  ! linearly interpolate particle location in DEM cell
-  Dxl = DEM(Px+1,Py+1)
-  Dxu = DEM(Px+2,Py+1)
-  Dyl = DEM(Px+1,Py+1)
-  Dyu = DEM(Px+1,Py+2)
-  ! correct for edges
-  if (Px == nx -1) Dxu = Dxl
-  if (Py == ny -1) Dyu = Dyl
-  X = ( ((1.0d0-Clocx)*Dxl &
-        + Dxu*Clocx)  +    &
-       ((1.0d0-Clocy)*Dyl &
-                + Dyu*Clocy) ) / 2.0D0
-  Zadj(j) = P(j,3) + X - maxZ
-end do !!j
+!$OMP END DO NOWAIT
+!$OMP FLUSH
+!$OMP END PARALLEL
 
 !!! Outstanding question around whether we can do this cheaper . . .
 XYZ(1:2,:) = transpose(P(1:np_active,1:2))
