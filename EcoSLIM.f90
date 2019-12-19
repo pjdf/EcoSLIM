@@ -1615,7 +1615,10 @@ call system_clock(T4)
 restartBin_time_write = restartBin_time_write + (T4-T3)
 
 ! close output file
+call system_clock(T3)
 close(114)
+call system_clock(T4)
+transientParticle_time_write = transientParticle_time_write + (T4-T3)
 
 ! Create/open/write the final particles' locations and residence time
 ! @RMM, superceded by option for 3D file each timestep, this file
@@ -1720,6 +1723,7 @@ IO_time_write = IO_time_write + (T2-T1)
         write(11,*)
         write(11,'("VTK Points Time (s):",e12.5)') float(vtkPoints_time_write)/1000.
         write(11,'("VTK Grid Time (s):",e12.5)') float(vtkGrid_time_write)/1000.
+        write(11,'("ASCII ET Time (s):",e12.5)') float(asciiET_time_write)/1000.
         write(11,'("Restart Particle Time (s):",e12.5)') float(restartBin_time_write)/1000.
         write(11,'("ET Output Time (s):",e12.5)') float(outET_time_write)/1000.
         write(11,'("Flow Output Time (s):",e12.5)') float(outFlow_time_write)/1000.
