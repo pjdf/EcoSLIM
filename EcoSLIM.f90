@@ -268,6 +268,13 @@ real*8  ET_dt, DR_Temp
 ! the first set are used for total run timing the latter for component timing
 integer  Total_time1, Total_time2, t1, t2, IO_time_read, IO_time_write, parallel_time
 integer  sort_time
+
+!! Extra variables for checkpointing how long different write steps take
+integer t3, t4
+integer vtkPoints_time_write, vtkGrid_time_write, asciiET_time_write
+integer restartBin_time_write, outET_time_write, outFlow_time_write, petBalance_time_write
+integer log_time_write, exitParticles_time_write, transientParticle_time_write
+
 !! integers for writing C or point based output
 integer ipwrite, ibinpntswrite
 ! integers for writing gridded ET outputs
@@ -331,6 +338,14 @@ IO_time_read = 0
 IO_time_write = 0
 parallel_time = 0
 sort_time = 0
+vtkPoints_time_write = 0
+vtkGrid_time_write = 0
+asciiET_time_write = 0
+restartBin_time_write = 0
+outET_time_write = 0
+outFlow_time_write = 0
+petBalance_time_write = 0
+transientParticle_time_write = 0
 
         call system_clock(Total_time1)
 
@@ -890,8 +905,11 @@ conc_header(7) = 'ET_Mass'
 conc_header(8) = 'ET_Age'
 conc_header(9) = 'ET_Comp'
 
+call system_clock(T3)
 if(icwrite > 0)  &
 call vtk_write(Time_first,C,conc_header,nx,ny,nz,0,n_constituents,Pnts,vtk_file)
+call system_clock(T4)
+vtkGrid_time_write = vtkGrid_time_write + (T4-T3)
 
 !! clear out C arrays
 C = 0.0D0
@@ -1393,6 +1411,7 @@ if (mod((kk-1),(pft2-pft1+1)) == 0 )  pfkk = pft1 - 1
 
 call system_clock(T1)
 
+call system_clock(T3)
 
 !! format statements for particle output
 61  FORMAT(4(e12.5))
@@ -1424,7 +1443,12 @@ where (C(3,:,:,:)>0.0)  C(5,:,:,:) = C(5,:,:,:) / C(3,:,:,:)
 where (C(7,:,:,:)>0.0)  C(8,:,:,:) = C(8,:,:,:) / C(7,:,:,:)
 where (C(7,:,:,:)>0.0)  C(9,:,:,:) = C(9,:,:,:) / C(7,:,:,:)
 
+call system_clock(T4)
+transientParticle_time_write = transientParticle_time_write + (T4-T3)
+
+
 !Write gridded ET outputs to text files
+call system_clock(T3)
 if(etwrite > 0) then
 if (mod(kk,etwrite) == 0) then
 ! open/create/write the 3D output file
@@ -1442,21 +1466,34 @@ end do
 close(14)
 end if
 end if
+call system_clock(T4)
+asciiET_time_write = asciiET_time_write + (T4-T3)
 
 ! write grid based values ("concentrations")
+call system_clock(T3)
 vtk_file=trim(runname)//'_cgrid'
 if(icwrite > 0)  then
 if(mod(kk,icwrite) == 0)  &
 call vtk_write(Time_Next(kk),C,conc_header,nx,ny,nz,outkk,n_constituents,Pnts,vtk_file)
 end if
+call system_clock(T4)
+vtkGrid_time_write = vtkGrid_time_write + (T4-T3)
+
 ! write binary particle locations and attributes
+call system_clock(T3)
 vtk_file=trim(runname)//'_pnts'
 if(ibinpntswrite > 0)  then
 if(mod(kk,ibinpntswrite) == 0)  &
 call vtk_write_points(P,np_active,np,outkk,vtk_file, dx, dy,nx,ny, maxZ,dem)
 end if
+call system_clock(T4)
+vtkPoints_time_write = vtkPoints_time_write + (T4-T3)
+
 !! reset C
+call system_clock(T3)
 C = 0.0D0
+call system_clock(T4)
+transientParticle_time_write = transientParticle_time_write + (T4-T3)
 !! reset ET_grid
 !!ET_grid = 0.0D0
 call system_clock(T2)
@@ -1561,6 +1598,7 @@ call system_clock(T1)
 !close(13)
 
 ! Write out full particle array as binary restart file
+call system_clock(T3)
 open(116,file=trim(runname)//'_particle_restart.bin', FORM='unformatted',  &
     access='stream')
 write(116) np_active
@@ -1573,6 +1611,8 @@ else
 end if
 !end do !11
 close(116)
+call system_clock(T4)
+restartBin_time_write = restartBin_time_write + (T4-T3)
 
 ! close output file
 close(114)
@@ -1591,6 +1631,7 @@ close(114)
 !close(13)
 !! write ET files
 !
+call system_clock(T3)
 open(13,file=trim(runname)//'_ET_output.txt')
 write(13,*) 'TIME ET_age ET_comp1 ET_comp2 ET_comp3 ET_mass ET_Np'
 do ii = 1, pfnt
@@ -1614,9 +1655,12 @@ end do
 flush(13)
 ! close ET file
 close(13)
+call system_clock(T4)
+outET_time_write = outET_time_write + (T4-T3)
 
 !! write Outflow
 !
+call system_clock(T3)
 open(13,file=trim(runname)//'_flow_output.txt')
 write(13,*) 'TIME Out_age Out_comp1 outcomp2 outcomp3 Out_mass Out_NP'
 do ii = 1, pfnt
@@ -1637,9 +1681,12 @@ end do
 flush(13)
 ! close ET file
 close(13)
+call system_clock(T4)
+outFlow_time_write = outFlow_time_write + (T4-T3)
 
 !! write P-ET water balance
 !
+call system_clock(T3)
 open(13,file=trim(runname)//'_PET_balance.txt')
 write(13,*) 'TIME P[kg] ET[kg]'
 do ii = 1, pfnt
@@ -1649,6 +1696,9 @@ end do
 flush(13)
 ! close ET file
 close(13)
+call system_clock(T4)
+petBalance_time_write = petBalance_time_write + (T4-T3)
+
 call system_clock(T2)
 IO_time_write = IO_time_write + (T2-T1)
 
@@ -1667,6 +1717,14 @@ IO_time_write = IO_time_write + (T2-T1)
         Write(11,'("File IO Time Write (s):",e12.5)') float(IO_time_write)/1000.
         Write(11,'("Time Sorting (s):",e12.5)') float(sort_time)/1000.
         Write(11,'("Parallel Particle Time (s):",e12.5)') float(parallel_time)/1000.
+        write(11,*)
+        write(11,'("VTK Points Time (s):",e12.5)') float(vtkPoints_time_write)/1000.
+        write(11,'("VTK Grid Time (s):",e12.5)') float(vtkGrid_time_write)/1000.
+        write(11,'("Restart Particle Time (s):",e12.5)') float(restartBin_time_write)/1000.
+        write(11,'("ET Output Time (s):",e12.5)') float(outET_time_write)/1000.
+        write(11,'("Flow Output Time (s):",e12.5)') float(outFlow_time_write)/1000.
+        write(11,'("PET Balance Output Time (s):",e12.5)') float(petBalance_time_write)/1000.
+        write(11,'("Transient particle + ET norms Time (s):",e12.5)') float(transientParticle_time_write)/1000.
         write(11,*)
         ! close the log file
         close(11)
