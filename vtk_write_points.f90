@@ -41,7 +41,7 @@ debug = 0
 !
 Write(ctime,'(i8.8)') icycle
 OPEN(15,FILE=trim(vtk_file)//'.'//ctime//'.vtk',FORM='unformatted',  &
-    access='stream')
+    access='stream',convert='BIG_ENDIAN')
 !
 !      Write header info
 !
