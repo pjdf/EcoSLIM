@@ -1564,7 +1564,7 @@ if (total_mass > 0.0d0)  then
 end if
 
 ! write out summary of mass, age, particles for this timestep
-  write(11,'(2(i10),1(i12),3(f12.5),4(1x,e12.5,1x),3(i8),2(i12))') kk, pfkk, outkk, Time_Next(kk), mean_age , mean_comp, &
+  write(11,'(3(i10),2(f14.5),1(f12.5),4(1x,e12.5,1x),3(i8),2(i12))') kk, pfkk, outkk, Time_Next(kk), mean_age , mean_comp, &
                                           mean_mass, total_mass,  PET_balance(kk,1), PET_balance(kk,2), &
                                           i_added_particles,  &
                                           ET_np(kk), Out_np(kk), np_active,np_active2
