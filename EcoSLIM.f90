@@ -1417,7 +1417,7 @@ call system_clock(T3)
 61  FORMAT(4(e12.5))
 62  FORMAT(4(e12.5))
 
-write(filenumout,'(i5.5)') outkk
+write(filenumout,'(i6.6)') outkk
 
 
 ! write all active particles at concentration in ASCII VisIT 3D file format
