@@ -138,6 +138,7 @@ real*8,allocatable::Sy(:,:)  ! Sy: Slopes in y-direction (not used)
 real*8,allocatable::Saturation(:,:,:)    ! Saturation (read from ParFlow)
 real*8,allocatable::Porosity(:,:,:)      ! Porosity (read from ParFlow)
 real*8,allocatable::EvapTrans(:,:,:)     ! CLM EvapTrans (read from ParFlow, [1/T] units)
+real*8,allocatable::EvapTrans_cum(:,:,:) ! CLM EvapTrans accumulated over timesteps (read from ParFlow, [1/T] units)
 real*8,allocatable::CLMvars(:,:,:)     ! CLM Output (read from ParFlow, following single file
                                        ! CLM output as specified in the manual)
 real*8, allocatable::Pnts(:,:), DEM(:,:) ! DEM and grid points for concentration output
@@ -223,6 +224,10 @@ real*8 dtfrac
         ! numerical stability while advecting a particle to a new
         ! location.
 
+integer dtcum
+        ! Number of timesteps over which to accumulate evaptrans
+        ! before particles are inserted
+
 real*8 Xmin, Xmax, Ymin, Ymax, Zmin, Zmax
         ! Domain boundaries in local / grid coordinates. min values set to zero,
         ! DEM is read in later to output to Terrain Following Grid used by ParFlow.
@@ -257,8 +262,9 @@ real*8 denh2o, moldiff, Efract  !, ran1
 ! time history of ET, time (1,:) and mass for rain (2,:), snow (3,:),
 ! PET balance is water balance flux from PF accumulated over the domain at each
 ! timestep
-real*8, allocatable::ET_age(:,:), ET_comp(:,:), PET_balance(:,:), ET_mass(:)
+real*8, allocatable::ET_age(:,:), ET_comp(:,:), ET_mass(:)
 real*8, allocatable::Out_age(:,:), Out_mass(:,:), Out_comp(:,:)
+real*8, allocatable::PET_balance(:,:), PET_balance_cum(:,:)
 integer, allocatable:: ET_np(:), Out_np(:)
 
 
@@ -440,7 +446,8 @@ allocate(PInLoc(np,3))
 allocate(Sx(nx,ny),Sy(nx,ny), DEM(nx,ny))
 allocate(dz(nz), Zt(0:nz))
 allocate(Vx(nnx,ny,nz), Vy(nx,nny,nz), Vz(nx,ny,nnz))
-allocate(Saturation(nx,ny,nz), Porosity(nx,ny,nz),EvapTrans(nx,ny,nz), Ind(nx,ny,nz))
+allocate(Saturation(nx,ny,nz), Porosity(nx,ny,nz),Ind(nx,ny,nz))
+allocate(EvapTrans(nx,ny,nz), EvapTrans_cum(nx,ny,nz))
 allocate(CLMvars(nx,ny,nzclm))
 allocate(C(n_constituents,nx,ny,nz))
 !allocate(ET_grid(1,nx,ny,nz))
@@ -453,6 +460,7 @@ Vz = 0.0d0
 Saturation = 0.0D0
 Porosity = 0.0D0
 EvapTrans = 0.0d0
+EvapTrans_cum = 0.0d0
 C = 0.0d0
 !ET_grid=0.0d0
 
@@ -485,12 +493,13 @@ end if
 ! set ET DT to ParFlow one and allocate ET arrays accordingly
 ET_dt = pfdt
 allocate(ET_age(pfnt,5), ET_comp(pfnt,3), ET_mass(pfnt), ET_np(pfnt))
-allocate(PET_balance(pfnt,2))
+allocate(PET_balance(pfnt,2),PET_balance_cum(pfnt,2))
 ET_age = 0.0d0
 ET_mass = 0.0d0
 ET_comp = 0.0d0
 ET_np = 0
 PET_balance = 0.0D0
+PET_balance_cum = 0.0d0
 
 allocate(Out_age(pfnt,5), Out_comp(pfnt,3), Out_mass(pfnt,5), Out_np(pfnt))
 Out_age = 0.0d0
@@ -578,6 +587,9 @@ write(11,*)
 write(11,*)  'Indicator File'
 write(11,*)   nind, 'Indicators'
 
+! accumulation period for particles
+read (10,*) dtcum
+write(11,'("Particle accumulation timesteps:",i4)') dtcum
 
 ! allocate P, Sx, dz, Vx, Vy, Vz, Saturation, and Porosity arrays
 if (nind<=0) then
@@ -973,6 +985,7 @@ if (mod((kk-1),(pft2-pft1+1)) == 0 )  pfkk = pft1 - 1
         ! Read in the Evap_Trans
         fname=trim(adjustl(pname))//'.out.evaptrans.'//trim(adjustl(filenum))//'.pfb'
         call pfb_read(EvapTrans,fname,nx,ny,nz)
+
         ! check if we read full CLM output file
         if (clmfile) then
          !Read in CLM output file @RMM to do make this input
@@ -989,6 +1002,7 @@ if (mod((kk-1),(pft2-pft1+1)) == 0 )  pfkk = pft1 - 1
         Vx = Vx * V_mult
         Vy = Vy * V_mult
         Vz = Vz * V_mult
+
         i_added_particles = 0
         ! Add particles if P-ET > 0
         if (clmtrans) then   !check if this is our mode of operation, read in the ParFlow evap trans file
@@ -1006,87 +1020,108 @@ if (mod((kk-1),(pft2-pft1+1)) == 0 )  pfkk = pft1 - 1
         do i = 1, nx
         do j = 1, ny
         do k = 1, nz
+
+        !! Calculate the per-step PET balance
         if (EvapTrans(i,j,k)> 0.0d0) then
         ! sum water inputs in PET 1 = P, 2 = ET, kk= PF timestep
         ! units of ([T]*[1/T]*[L^3])/[M/L^3] gives Mass of water input
         PET_balance(kk,1) = PET_balance(kk,1) &
                             + pfdt*EvapTrans(i,j,k)*dx*dy*dz(k)*denh2o
-        do ji = 1, iflux_p_res
-          if (np_active < np) then   ! check if we have particles left
-            np_active = np_active + 1
-            pid = pid + 1
-            ii = np_active             ! increase total number of particles
-            P(ii,11) = pid
-            i_added_particles = i_added_particles + 1   ! increase particle counter for accounting
-            ! assign X, Y locations randomly to recharge cell
-            P(ii,1) = float(i-1)*dx  +ran1(ir)*dx
-            PInLoc(ii,1) = P(ii,1)
-            P(ii,12)=P(ii,1) ! Saving the initial location
-            P(ii,2) = float(j-1)*dy  +ran1(ir)*dy
-            PInLoc(ii,2) = P(ii,2)
-            P(ii,13)=P(ii,2) ! Saving the initial location
-            Z = 0.0d0
-            do ik = 1, k
-              Z = Z + dz(ik)
-            end do
-            ! Z location is fixed
-            P(ii,3) = Z -dz(k)*0.5d0 !  *ran1(ir)
-            PInLoc(ii,3) = P(ii,3)
-            P(ii,14)=P(ii,3) ! Saving the initial location
-
-            ! assign zero time and flux of water
-            ! time is assigned randomly over the recharge time to represent flux over the
-            ! PF DT unless we are running SS then have all particles start at the same time
-            P(ii,4) = 0.0d0
-
-            if (iflux_p_res >= 0) then
-               P(ii,4) = 0.0d0 +ran1(ir)*pfdt
-
-               !If you are using an indicator file than time according to the local indicator
-               if (nind > 0) then
-                 Ploc(1) = floor(P(ii,1) / dx)
-                 Ploc(2) = floor(P(ii,2) / dy)
-                 Ploc(3) = nz-1
-
-                 itemp=int(Ind(Ploc(1)+1,Ploc(2)+1,Ploc(3)+1))
-                 if(itemp>0 .and. itemp <=nind) then
-                   P(ii,(17+itemp))=P(ii,(17+itemp)) + P(ii,4)
-                   itemp=0
-                 end  if
-               end if
-            end if
-
-
-            P(ii,5) = 0.0d0
-            P(ii,15) = part_tstart + float((kk-1))*pfdt + P(ii,4) !recording particle insert time
-            ! mass of water flux into the cell divided up among the particles assigned to that cell
-            !P(ii,6) = (1.0d0/float(iflux_p_res))   &
-            !        *P(ii,4)*EvapTrans(i,j,k)*dx*dy*dz(k)*denh2o  !! units of ([T]*[1/T]*[L^3])/[M/L^3] gives Mass
-            P(ii,6) = (1.0d0/float(abs(iflux_p_res)))   &
-                    *pfdt*EvapTrans(i,j,k)*dx*dy*dz(k)*denh2o  !! units of ([T]*[1/T]*[L^3])/[M/L^3] gives Mass
-                    !! check if input is rain or snowmelt
-            if(CLMvars(i,j,11) > 0.0) then !this is snowmelt
-              P(ii,7) = 3.0d0 ! Snow composition
-            else
-              P(ii,7) = 2.d0 ! Rainfall composition
-            end if
-            P(ii,8) = 1.0d0   ! make particle active
-            P(ii,9) = 1.0d0
-            P(ii,10) = 0.0d0  ! Particle hasn't exited domain
-
-        else
-          write(11,*) ' **Warning rainfall input but no paricles left'
-          write(11,*) ' **Exiting code gracefully writing restart '
-          goto 9090
-        end if  !! do we have particles left?
-      end do !! for flux particle resolution
-
         else !! ET not P
         ! sum water inputs in PET 1 = P, 2 = ET, kk= PF timestep
         ! units of ([T]*[1/T]*[L^3])/[M/L^3] gives Mass of water input
         PET_balance(kk,2) = PET_balance(kk,2) &
                             + pfdt*EvapTrans(i,j,k)*dx*dy*dz(k)*denh2o
         end if  !! end if for P-ET > 0
+
+
+        if (mod((kk-1),dtcum) == 0) EvapTrans_cum=0.d0
+        EvapTrans_cum = EvapTrans_cum + EvapTrans
+        !! Add particles at accumulation timestep,
+        !  and calculate the accumulation-scale PET Balance
+        if(mod(kk,dtcum) == 0) then
+          if(EvapTrans_cum(i,j,k)> 0.0d0) then
+
+            PET_balance_cum(kk,1) = PET_balance_cum(kk,1) &
+              + pfdt*EvapTrans_cum(i,j,k)*dx*dy*dz(k)*denh2o
+
+            do ji = 1, iflux_p_res
+              if (np_active < np) then   ! check if we have particles left
+                np_active = np_active + 1
+                pid = pid + 1
+                ii = np_active             ! increase total number of particles
+                P(ii,11) = pid
+                i_added_particles = i_added_particles + 1   ! increase particle counter for accounting
+                ! assign X, Y locations randomly to recharge cell
+                P(ii,1) = float(i-1)*dx  +ran1(ir)*dx
+                PInLoc(ii,1) = P(ii,1)
+                P(ii,12)=P(ii,1) ! Saving the initial location
+                P(ii,2) = float(j-1)*dy  +ran1(ir)*dy
+                PInLoc(ii,2) = P(ii,2)
+                P(ii,13)=P(ii,2) ! Saving the initial location
+                Z = 0.0d0
+                do ik = 1, k
+                  Z = Z + dz(ik)
+                end do
+                ! Z location is fixed
+                P(ii,3) = Z -dz(k)*0.5d0 !  *ran1(ir)
+                PInLoc(ii,3) = P(ii,3)
+                P(ii,14)=P(ii,3) ! Saving the initial location
+
+                ! assign zero time and flux of water
+                ! time is assigned randomly over the recharge time to represent flux over the
+                ! PF DT unless we are running SS then have all particles start at the same time
+                P(ii,4) = 0.0d0
+
+                if (iflux_p_res >= 0) then
+                   P(ii,4) = 0.0d0 +ran1(ir)*pfdt
+
+                   !If you are using an indicator file than time according to the local indicator
+                   if (nind > 0) then
+                     Ploc(1) = floor(P(ii,1) / dx)
+                     Ploc(2) = floor(P(ii,2) / dy)
+                     Ploc(3) = nz-1
+
+                     itemp=int(Ind(Ploc(1)+1,Ploc(2)+1,Ploc(3)+1))
+                     if(itemp>0 .and. itemp <=nind) then
+                       P(ii,(17+itemp))=P(ii,(17+itemp)) + P(ii,4)
+                       itemp=0
+                     end  if
+                   end if
+                end if
+
+
+                P(ii,5) = 0.0d0
+                P(ii,15) = part_tstart + float((kk-1))*pfdt + P(ii,4) !recording particle insert time
+                ! mass of water flux into the cell divided up among the particles assigned to that cell
+                !P(ii,6) = (1.0d0/float(iflux_p_res))   &
+                !        *P(ii,4)*EvapTrans(i,j,k)*dx*dy*dz(k)*denh2o  !! units of ([T]*[1/T]*[L^3])/[M/L^3] gives Mass
+                P(ii,6) = (1.0d0/float(abs(iflux_p_res)))   &
+                        *pfdt*EvapTrans_cum(i,j,k)*dx*dy*dz(k)*denh2o  !! units of ([T]*[1/T]*[L^3])/[M/L^3] gives Mass
+                        !! check if input is rain or snowmelt
+                if(CLMvars(i,j,11) > 0.0) then !this is snowmelt
+                  P(ii,7) = 3.0d0 ! Snow composition
+                else
+                  P(ii,7) = 2.d0 ! Rainfall composition
+                end if
+                P(ii,8) = 1.0d0   ! make particle active
+                P(ii,9) = 1.0d0
+                P(ii,10) = 0.0d0  ! Particle hasn't exited domain
+
+              else
+                write(11,*) ' **Warning rainfall input but no paricles left'
+                write(11,*) ' **Exiting code gracefully writing restart '
+                goto 9090
+              end if  !! do we have particles left?
+            end do !! for flux particle resolution
+
+          else
+            !PET > P for accumulation step
+            PET_balance_cum(kk,2) = PET_balance_cum(kk,2) &
+                  + pfdt*EvapTrans_cum(i,j,k)*dx*dy*dz(k)*denh2o
+          end if
+        end if !End particle accumulation step
+
         end do
         end do
         end do
