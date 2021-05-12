@@ -158,7 +158,7 @@ integer np_ic, np, np_active, np_active2, icwrite, jj, npnts, ncell, npout
 integer nt, n_constituents
         ! number of timesteps ParFlow; numer of C vectors written for VTK output
 
-integer  pid
+integer*8  pid
         ! Counter for particle ID number
 
 real*8  pfdt, advdt(3), Ltemp
