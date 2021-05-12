@@ -587,10 +587,6 @@ write(11,*)
 write(11,*)  'Indicator File'
 write(11,*)   nind, 'Indicators'
 
-! accumulation period for particles
-read (10,*) dtcum
-write(11,'("Particle accumulation timesteps:",i4)') dtcum
-
 ! allocate P, Sx, dz, Vx, Vy, Vz, Saturation, and Porosity arrays
 if (nind<=0) then
   allocate(P(np,17))
@@ -614,6 +610,10 @@ else
   !Read in the indictor file
 
 end if
+
+! accumulation period for particles
+read (10,*) dtcum
+write(11,'("Particle accumulation timesteps:",i4)') dtcum
 
 ! end of SLIM input
 close(10)
@@ -985,6 +985,8 @@ if (mod((kk-1),(pft2-pft1+1)) == 0 )  pfkk = pft1 - 1
         ! Read in the Evap_Trans
         fname=trim(adjustl(pname))//'.out.evaptrans.'//trim(adjustl(filenum))//'.pfb'
         call pfb_read(EvapTrans,fname,nx,ny,nz)
+        if (mod((kk-1),dtcum) == 0) EvapTrans_cum=0.d0
+        EvapTrans_cum = EvapTrans_cum + EvapTrans
 
         ! check if we read full CLM output file
         if (clmfile) then
@@ -1021,31 +1023,31 @@ if (mod((kk-1),(pft2-pft1+1)) == 0 )  pfkk = pft1 - 1
         do j = 1, ny
         do k = 1, nz
 
+
         !! Calculate the per-step PET balance
         if (EvapTrans(i,j,k)> 0.0d0) then
         ! sum water inputs in PET 1 = P, 2 = ET, kk= PF timestep
         ! units of ([T]*[1/T]*[L^3])/[M/L^3] gives Mass of water input
-        PET_balance(kk,1) = PET_balance(kk,1) &
+          PET_balance(kk,1) = PET_balance(kk,1) &
                             + pfdt*EvapTrans(i,j,k)*dx*dy*dz(k)*denh2o
         else !! ET not P
         ! sum water inputs in PET 1 = P, 2 = ET, kk= PF timestep
         ! units of ([T]*[1/T]*[L^3])/[M/L^3] gives Mass of water input
-        PET_balance(kk,2) = PET_balance(kk,2) &
+          PET_balance(kk,2) = PET_balance(kk,2) &
                             + pfdt*EvapTrans(i,j,k)*dx*dy*dz(k)*denh2o
         end if  !! end if for P-ET > 0
 
-
-        if (mod((kk-1),dtcum) == 0) EvapTrans_cum=0.d0
-        EvapTrans_cum = EvapTrans_cum + EvapTrans
         !! Add particles at accumulation timestep,
         !  and calculate the accumulation-scale PET Balance
+        !write(*,'("kk: ",i8,"DT_cum:",i8,"mod: ",i8)') kk,dtcum,mod(kk,dtcum)
         if(mod(kk,dtcum) == 0) then
           if(EvapTrans_cum(i,j,k)> 0.0d0) then
 
             PET_balance_cum(kk,1) = PET_balance_cum(kk,1) &
               + pfdt*EvapTrans_cum(i,j,k)*dx*dy*dz(k)*denh2o
 
-            do ji = 1, iflux_p_res
+              write(*,*) '5'
+              do ji = 1, iflux_p_res
               if (np_active < np) then   ! check if we have particles left
                 np_active = np_active + 1
                 pid = pid + 1
