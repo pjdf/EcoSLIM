@@ -132,6 +132,12 @@ write(15) lf
 !Write(15) "LOOKUP_TABLE default"//lf
 !write(15) (real(P(j,9),kind=4), j=1,np_active)
 !write(15) lf
+write(15) "SCALARS pid float"//lf
+Write(15) "LOOKUP_TABLE default"//lf
+! write(15) (real(P(j,7),kind=4), j=1,np_active)
+write(15) real(P(1:np_active,11),kind=4)
+write(15) lf
+
 CLOSE(15)
 
 
